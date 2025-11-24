@@ -8,11 +8,6 @@ from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point, Twist
 from std_msgs.msg import Float32MultiArray
 
-#
-# This code is modified from obj_det_visualizer provided in the tutorial
-# All credit goes to the original authors of the tutorial code.
-#
-
 class ObjectSubscriber(Node):
 
     def __init__(self):

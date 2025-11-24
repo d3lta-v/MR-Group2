@@ -1,6 +1,6 @@
 from setuptools import setup
 
-package_name = 'obj_det_openloopcontrol'
+package_name = 'path_segmentation'
 
 setup(
     name=package_name,
@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'obj_visualizer = obj_det_openloopcontrol.read_bag:main',
+            'obj_visualizer = path_segmentation.read_bag:main',
         ],
     },
 )
