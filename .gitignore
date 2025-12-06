@@ -26,3 +26,4 @@ Temporary Items
 .apdisk
 
 *.cache
+test_results/
