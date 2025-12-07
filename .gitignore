@@ -25,5 +25,6 @@ Network Trash Folder
 Temporary Items
 .apdisk
 
+# Temporary files after prediction
 *.cache
 test_results/
