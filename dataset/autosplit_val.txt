@@ -9,6 +9,7 @@
 ./yolo/images/image_00300.png
 ./yolo/images/image_00534.png
 ./yolo/images/image_00819.png
+./yolo/images/image_00887.png
 ./yolo/images/image_00908.png
 ./yolo/images/image_00913.png
 ./yolo/images/image_00914.png
@@ -27,3 +28,13 @@
 ./yolo/images/image_01100.png
 ./yolo/images/image_01118.png
 ./yolo/images/image_01128.png
+./yolo/images/image_01144.png
+./yolo/images/image_01190.png
+./yolo/images/image_01205.png
+./yolo/images/image_01209.png
+./yolo/images/image_01215.png
+./yolo/images/image_01244.png
+./yolo/images/image_01246.png
+./yolo/images/image_01405.png
+./yolo/images/image_02289.png
+./yolo/images/image_02401.png
