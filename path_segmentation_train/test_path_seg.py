@@ -11,6 +11,8 @@ from datetime import datetime
 import cv2
 import numpy as np
 from ultralytics import YOLO
+from ultralytics.engine import results
+import torch
 
 
 class YOLOSegmentationInference:
@@ -121,7 +123,7 @@ class YOLOSegmentationInference:
         
         return summary
     
-    def process_result(self, result, img_name, viz_dir, masks_dir, 
+    def process_result(self, result: results.Results, img_name, viz_dir, masks_dir, 
                       crops_dir, json_dir, txt_dir, save_viz):
         """Process a single image result and save in multiple formats."""
         
@@ -144,7 +146,7 @@ class YOLOSegmentationInference:
             cv2.imwrite(str(viz_dir / f"{img_name}_annotated.jpg"), annotated)
         
         # Process each detection
-        if result.masks is not None and len(result.masks) > 0:
+        if result.masks is not None and result.boxes is not None and len(result.masks) > 0:
             boxes = result.boxes
             masks = result.masks
             
@@ -186,8 +188,11 @@ class YOLOSegmentationInference:
                 )
             
             # Save combined mask (all objects)
-            combined_mask = (masks.data.max(dim=0)[0].cpu().numpy() * 255).astype(np.uint8)
+            combined_mask: np.uint8 = (masks.data.max(dim=0)[0].cpu().numpy() * 255).astype(np.uint8)
             cv2.imwrite(str(masks_dir / f"{img_name}_combined_mask.png"), combined_mask)
+
+            # TODO: Process image mask here!
+
         
         # Save per-image JSON
         with open(json_dir / f"{img_name}.json", "w") as f:
