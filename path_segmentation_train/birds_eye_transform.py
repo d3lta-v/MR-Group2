@@ -7,7 +7,7 @@ import time
 # This is a proof of concept test script
 # Note that the resolution of input images are 320x180
 
-DELAY = 250  # milliseconds
+DELAY = 50  # milliseconds
 
 # Read a sample image
 images_path = Path(__file__).parent.parent / "dataset" / "yolo" / "images"

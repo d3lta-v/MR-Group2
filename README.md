@@ -32,6 +32,12 @@ Architecturally speaking, it needs to have the following key pieces (ordered in 
         - Inputs: `cte` and `omega_rel` CTE and relative angle, distance to target `target_dist`
         - Outputs: Directly outputs to the topic `/cmd_vel` the velocity and angular velocity of the vehicle
 
+There are 3 major configurations for this codebase tailored for each challenge:
+
+1. Challenge A: Motion PID Controller with a modified DirectionalGuidancePackage and standard LinearGuidancePackage.
+2. Challenge B: Motion PID Controller with a modified DirectionalGuidancePackage and standard LinearGuidancePackage.
+3. AutoLap: All units enabled.
+
 ## Directories
 
 This repo contains ROS packages that can be installed with the generic `colcon build  --packages-select <package name>` once the folder is placed inside the `src` folder of your ROS 2 workspace.
