@@ -1,0 +1,17 @@
+/cone_localization_node:
+  ros__parameters:
+    confidence_threshold: 0.6
+    iou_threshold: 0.45
+    imgsz: 640
+    device: 'cuda'
+    half_precision: true
+    cone_class_id: 0
+    map_frame: 'map'
+    camera_frame: 'zed2_left_camera_optical_frame'
+    robot_frame: 'base_link'
+    max_detection_distance: 20.0
+    min_detection_distance: 0.5
+    cone_merge_distance: 0.5
+    cone_height: 0.3
+    use_depth_camera: true
+    publish_rate: 10.0
