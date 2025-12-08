@@ -68,11 +68,11 @@ class MotionPIDController(Node):
 
         self.throttle_counter = 0  # throttling the logging messages so it doesn't spam the console
 
-        self.forward_speed = self.declare_parameter("forward_speed").value
-        self.Kp_ = self.declare_parameter("Kp").value #Kp
-        self.Kd_ = self.declare_parameter("Kd").value #Kd
-        self.Ki_ = self.declare_parameter("Ki").value #Ki
-        self.Kp_angle_ = self.declare_parameter("Kp_angle").value
+        self.forward_speed = self.declare_parameter("forward_speed", 0.5).value
+        self.Kp_ = self.declare_parameter("Kp", 0.2).value #Kp
+        self.Kd_ = self.declare_parameter("Kd", 0.08).value #Kd
+        self.Ki_ = self.declare_parameter("Ki", 0.00001).value #Ki
+        self.Kp_angle_ = self.declare_parameter("Kp_angle", 1.5).value
 
         # this is the publisher to publish the controls to
         # use this publisher to publish the controls determined by the PID controller to control the robot in gazebo
@@ -203,6 +203,16 @@ class MotionPIDController(Node):
 
 def main(args=None):
     rclpy.init(args=args)
+    
+    """
+        Arguments available:
+        parameters=[{"forward_speed": forward_speed_arg,
+                    "Kp" : Kp_val,
+                    "Kd" : Kd_val,
+                    "Ki" : Ki_val,
+                    "Kp_angle" : Kp_angle_val,
+                    }]
+    """
 
     wfh=MotionPIDController()
     rclpy.spin(wfh)
