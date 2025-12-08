@@ -12,7 +12,6 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 from ultralytics.engine import results
-import torch
 
 
 class YOLOSegmentationInference:
@@ -28,7 +27,7 @@ class YOLOSegmentationInference:
             iou_threshold (float): IoU threshold for NMS
             device (int/str): Device for inference (0 for GPU, 'cpu')
         """
-        self.model = YOLO(weights_path)
+        self.model = YOLO(weights_path, task='segment')
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
         self.device = device
@@ -272,7 +271,7 @@ def main():
     """Main function to run inference."""
     
     # Configuration
-    WEIGHTS_PATH = "best.pt"
+    WEIGHTS_PATH = "best.engine"
     IMAGE_SOURCE = "../testimgs"  # Can be file, directory, or glob pattern
     OUTPUT_DIR = "test_results"
     CONF_THRESHOLD = 0.25

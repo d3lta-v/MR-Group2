@@ -10,3 +10,13 @@ This code is designed to be deployed via Google Colab due to the good availabili
 4. Upload the zipped `dataset.zip` to Colab
 5. Run the notebook
 6. Once the training is complete, download `results.zip` from Colab and unzip it locally to obtain `best.pt`, which is the best performing weights
+
+## Convert weights from PyTorch format to TensorRT format
+
+Follow [this tutorial](https://docs.ultralytics.com/guides/nvidia-jetson/#run-on-jetpack-512) based on your JetPack version. 
+
+Ensure that you've run this command after following the tutorial to ensure that you're able to export TensorRT. This will take about 5 minutes to run on the Jetson NX Xavier.
+
+```bash
+sudo apt install tensorrt nvidia-tensorrt-dev python3-libnvinfer-dev
+```
