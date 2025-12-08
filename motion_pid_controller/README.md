@@ -14,6 +14,14 @@ Linear Velocity is in an arbitrary unit
 2. 0.1 < Linear x <= 0.6 (slow, throttle: 104)
 3. 0.6 < Linear x <= 1.0 (fast, throttle: 105)
 
+## Installation
+
+Move this folder to your ROS workspace/src, and then run:
+
+```bash
+colcon build --packages-select motion_pid_controller
+```
+
 ## Starting this script in ROS
 
 ```bash

@@ -16,10 +16,10 @@ def generate_launch_description():
     Kp_angle_val = 1.5
 
     #node 
-    motion_pid_controller_py = Node(
+    motion_pid_node_py = Node(
         package='motion_pid_controller',
-        executable='motion_pid_controller.py',
-        name='motion_pid_controller',
+        executable='motion_pid_controller',
+        name='motion_pid_node',
         output='screen',
         parameters=[{"forward_speed": forward_speed_arg,
                      "Kp" : Kp_val,
@@ -31,7 +31,7 @@ def generate_launch_description():
 
     ld = LaunchDescription()
     
-    ld.add_action(motion_pid_controller_py)
+    ld.add_action(motion_pid_node_py)
     
     return ld
     

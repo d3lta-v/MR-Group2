@@ -28,3 +28,4 @@ Temporary Items
 # Temporary files after prediction
 *.cache
 test_results/
+/*.zip
