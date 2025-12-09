@@ -15,7 +15,7 @@ from math import sqrt, cos, sin, pi, atan2, inf, degrees
 import numpy as np
 import sys
 
-class PID:
+class AngularPID:
     def __init__(self, Kp, Kd, Ki, Kp_angle, integral_limit=None):
         self.Kp = Kp
         self.Kd = Kd
@@ -88,9 +88,9 @@ class PID:
         # NOTE: Positive angular velocity => turning to the left
         control = p_term + i_term + d_term - angle_term
 
-        logger.info('P: %s' % str(p_term), throttle_duration_sec=0.25)
-        logger.info('I: %s' % str(i_term), throttle_duration_sec=0.25)
-        logger.info('D: %s' % str(d_term), throttle_duration_sec=0.25)
+        logger.info('AP: %s' % str(p_term), throttle_duration_sec=0.25)
+        logger.info('AI: %s' % str(i_term), throttle_duration_sec=0.25)
+        logger.info('AD: %s' % str(d_term), throttle_duration_sec=0.25)
         logger.info('Angle term: %s' % str(angle_term), throttle_duration_sec=0.25)
 
         # Clamp output for safety, limited by robot capabilities
@@ -98,17 +98,81 @@ class PID:
 
         # min() is used to clamp the output to 1.0 for turns during sensor blackout
         return control
+    
+class LinearPID:
+    def __init__(self, Kp, Kd, Ki, max_linear_vel, integral_limit=None):
+        self.Kp = Kp
+        self.Kd = Kd
+        self.Ki = Ki
+        self.max_linear_vel = max_linear_vel
 
+        self.current_error = 0.0
+        self.last_error = 0.0
+        self.total_error = 0.0
+        self.error_difference = 0.0
+
+        # Simple integral windup limit (absolute value)
+        self.integral_limit = integral_limit
+
+    """ Reset the PID controller state. """
+    def reset(self):
+        self.current_error = 0.0
+        self.last_error = 0.0
+        self.total_error = 0.0
+        self.error_difference = 0.0
+    
+    def update_control(self, current_error, dt, logger):
+        if dt <= 0.0:
+            # Fallback to previous control if dt is invalid
+            self.get_logger().warn('PID dt invalid!!', throttle_duration_sec=0.25)
+            dt = 1e-6
+
+        # Update error terms
+        self.last_error = self.current_error
+        self.current_error = current_error
+        self.error_difference = (self.current_error - self.last_error) / dt
+
+        # Integrate with respect to time
+        self.total_error += self.current_error * dt
+
+        # Integral windup protection
+        if self.integral_limit is not None:
+            if self.total_error > self.integral_limit:
+                self.total_error = self.integral_limit
+            elif self.total_error < -self.integral_limit:
+                self.total_error = -self.integral_limit
+        
+        # PID terms
+        p_term = self.Kp * self.current_error
+        i_term = self.Ki * self.total_error
+        d_term = self.Kd * self.error_difference
+
+        control = p_term + i_term + d_term
+
+        logger.info('LP: %s' % str(p_term), throttle_duration_sec=0.25)
+        logger.info('LI: %s' % str(i_term), throttle_duration_sec=0.25)
+        logger.info('LD: %s' % str(d_term), throttle_duration_sec=0.25)
+
+        # Clamp output for safety, limited by robot capabilities. No reverse movement allowed as well
+        control = max(min(control, self.max_linear_vel), 0.0)
+
+        # min() is used to clamp the output to 1.0 for turns during sensor blackout
+        return control
 
 class MotionPIDController(Node):
     def __init__(self):
         super().__init__('motion_pid_controller')
 
         self.forward_speed = self.declare_parameter("forward_speed", 0.5).value
-        self.Kp_ = self.declare_parameter("Kp", 0.2).value #Kp
-        self.Kd_ = self.declare_parameter("Kd", 0.08).value #Kd
-        self.Ki_ = self.declare_parameter("Ki", 0.00001).value #Ki
-        self.Kp_angle_ = self.declare_parameter("Kp_angle", 1.5).value
+        self.target_xpos = self.declare_parameter("target_xpos", 2.5).value
+        self.AKp_ = self.declare_parameter("Kp", 0.2).value #Kp
+        self.AKd_ = self.declare_parameter("Kd", 0.08).value #Kd
+        self.AKi_ = self.declare_parameter("Ki", 0.00001).value #Ki
+        self.AKp_angle_ = self.declare_parameter("Kp_angle", 1.5).value
+
+        self.LKp_ = self.declare_parameter("LKp", 1.0).value
+        self.LKd_ = self.declare_parameter("LKd", 0.0).value
+        self.LKi_ = self.declare_parameter("LKi", 0.0).value
 
         # Control loop frequency (Hz) and timer
         self.control_frequency = self.declare_parameter("control_frequency", 50.0).value
@@ -128,12 +192,14 @@ class MotionPIDController(Node):
         self.cte_publisher = self.create_publisher(Float32, '/cte', QoSProfile(depth=10))
 
         # todo Part B: initialize your PID controller here
-        self.pid_controller = PID(self.Kp_, self.Kd_, self.Ki_, self.Kp_angle_)
+        self.angular_pid_controller = AngularPID(self.AKp_, self.AKd_, self.AKi_, self.AKp_angle_)
+        self.linear_pid_controller = LinearPID(self.LKp_, self.LKd_, self.LKi_, self.forward_speed)
 
         # State for control loop
         self.latest_cte = 0.0
         self.latest_angle_min = 0.0
         self.last_control_time = self.get_clock().now()
+        self.latest_xpos = 0.0
 
         # Fixed-rate control loop timer
         self.control_timer = self.create_timer(self.control_period, self.control_loop)
@@ -170,6 +236,7 @@ class MotionPIDController(Node):
 
         self.latest_cte = final_cte
         self.latest_angle_min = yaw # TODO: Verify that this is supposed to be the angle relative to the line/wall/lane
+        self.latest_xpos = msg.pose.pose.position.x
 
     def control_loop(self):
         # Compute time delta
@@ -178,18 +245,22 @@ class MotionPIDController(Node):
         self.last_control_time = now
 
         # Get control from PID controller
-        steering_angle = self.pid_controller.update_control(self.latest_cte, self.latest_angle_min, dt, self.get_logger())
+        steering_angle = self.angular_pid_controller.update_control(self.latest_cte, self.latest_angle_min, dt, self.get_logger())
+        linear_velocity = self.linear_pid_controller.update_control(self.target_xpos - self.latest_xpos, dt, self.get_logger())
 
         # Publish cmd_vel message
         actuator_cmd = Twist()
-        actuator_cmd.linear.x = self.forward_speed
+        actuator_cmd.linear.x = linear_velocity
         actuator_cmd.angular.z = steering_angle
         self.cmd_pub.publish(actuator_cmd)
 
+        self.get_logger().info('================================================', throttle_duration_sec=0.25)
         self.get_logger().info('CTE: %s' % str(self.latest_cte), throttle_duration_sec=0.25)
         self.get_logger().info('Steering command (Angular velocity in radians): %s' % str(steering_angle), throttle_duration_sec=0.25)
         self.get_logger().info('Angle to lane: %s' % str(degrees(self.latest_angle_min)), throttle_duration_sec=0.25)
-
+        self.get_logger().info('Linear error: %s' % str(self.target_xpos - self.latest_xpos), throttle_duration_sec=0.25)
+        self.get_logger().info('Velocity command: %s ' % str(linear_velocity), throttle_duration_sec=0.25)
+        self.get_logger().info('================================================\n', throttle_duration_sec=0.25)
 
     # def laser_scan_callback(self, msg: LaserScan):
     #     # Part A
