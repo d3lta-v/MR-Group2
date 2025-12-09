@@ -58,6 +58,12 @@ ros2 bag record -o project /cmd_vel \
 /zed/zed_node/rgb/image_rect_color
 ```
 
+### Playing back rosbag data
+
+```bash
+ros2 bag play <your bagfile>
+```
+
 ### Running the image exporter tool
 
 ```

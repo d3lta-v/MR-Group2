@@ -271,13 +271,13 @@ def main():
     """Main function to run inference."""
     
     # Configuration
-    WEIGHTS_PATH = "best.engine"
-    IMAGE_SOURCE = "../testimgs"  # Can be file, directory, or glob pattern
+    WEIGHTS_PATH = "best.pt"  # use the .engine file for Jetson devices, otherwise use .pt
+    IMAGE_SOURCE = "../dataset/coco"  # Can be file, directory, or glob pattern
     OUTPUT_DIR = "test_results"
-    CONF_THRESHOLD = 0.25
-    IOU_THRESHOLD = 0.7
+    CONF_THRESHOLD = 0.5      # higher confidence for better precision
+    IOU_THRESHOLD = 0.7       # NMS IoU threshold, higher will result in more accurate segmentation at the cost of object detection
     IMGSZ = 320
-    DEVICE = 'cpu'  # 0 for GPU, 'cpu' for CPU, 'mps' for Apple Silicon
+    DEVICE = 0  # 0 for GPU, 'cpu' for CPU, 'mps' for Apple Silicon
     
     # Initialize inference engine
     inference = YOLOSegmentationInference(
