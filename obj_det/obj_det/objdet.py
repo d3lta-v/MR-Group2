@@ -1,12 +1,14 @@
 import rclpy
 from rclpy.node import Node
-from zed_interfaces.msg import ObjectsStamped
+from zed_msgs.msg import ObjectsStamped, Object
 from rclpy.serialization import deserialize_message
 import math
 
 from visualization_msgs.msg import Marker
-from geometry_msgs.msg import Point, Twist
+from geometry_msgs.msg import Point
 from std_msgs.msg import Float32MultiArray
+
+import csv
 
 #
 # This code is modified from obj_det_visualizer provided in the tutorial
@@ -17,22 +19,44 @@ class ObjectSubscriber(Node):
 
     def __init__(self):
         super().__init__('ObjectSubscriber')
+
+        ### Subscribers
         self.subscription = self.create_subscription(
             ObjectsStamped,
             '/zed/zed_node/obj_det/objects',
-            self.listener_callback,
+            self.obj_listener_callback,
             10)
         self.subscription  # prevent unused variable warning
+
+        ### Publishers
         # Create a publisher for the Marker message
         self.marker_pub = self.create_publisher(Marker, '/bounding_box', 10)
-        
         # Create a publisher for the Float32MultiArray message
         self.publisher = self.create_publisher(Float32MultiArray, '/bounding_box_corners', 10)
 
-        ### Constants
-        self.desired_distance_from_obj = 1.0
+        ### Object array to store detected objects
+        self.detected_objects: list[Object] = []
 
-    def listener_callback(self, msg):
+        ### Fixed rate unit to write the detected objects to CSV every 5 seconds
+        self.csv_timer = self.create_timer(5.0, self.write_detected_objects_to_csv)  # every 5 seconds
+
+
+    def write_detected_objects_to_csv(self, filename='~/detected_objects.csv'):
+        """ Write the detected objects to a CSV file. """
+        with open(filename, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            # Write header
+            writer.writerow(['Label ID', 'Position X', 'Position Y', 'Position Z', 'Class'])
+            # Write object data
+            for obj in self.detected_objects:
+                writer.writerow([obj.label_id,  # label_id is a bit ambiguous, is it the unique identifier or the class label ID?
+                                 obj.position[0], 
+                                 obj.position[1], 
+                                 obj.position[2], 
+                                 obj.label]) # Note that label is actually the object's class
+
+
+    def obj_listener_callback(self, msg: ObjectsStamped):
 
         # Create and initialize the Marker message
         self.marker = Marker()
@@ -52,8 +76,23 @@ class ObjectSubscriber(Node):
         distances = [] # create list of distances, may be empty
 
         for obj in msg.objects:
-            corners = self.find_corners(obj)
+            # Multiple checks to ensure valid object
+            if obj is not Object:
+                continue  # Skip this object if not an Object instance
 
+            if obj.tracking_state != Object.TrackingState.TRACKING_STATE_OK:
+                continue  # Skip this object if not OK
+
+            # Once tracking is established, check if object is already recorded within detected_objects
+            if obj.label_id not in [o.label_id for o in self.detected_objects]:
+                self.detected_objects.append(obj)  # Add new object to the list
+            else:
+                # Update existing object information
+                index = [o.label_id for o in self.detected_objects].index(obj.label_id)
+                self.detected_objects[index] = obj
+            
+            # Visualisation
+            corners = self.find_corners(obj)
             # Add the points to form the bounding box
             self.add_bounding_box_edges(corners)
             self.publish_bounding_box(corners)
@@ -106,7 +145,7 @@ class ObjectSubscriber(Node):
         # Publish the marker
         self.publish_marker()
 
-    def find_corners(self, msg):
+    def find_corners(self, msg: Object):
         corners_obj = msg.bounding_box_3d.corners
         corners = [[c.kp[0].item(), c.kp[1].item(), c.kp[2].item()] for c in corners_obj]
         # print(corners[0][0])
