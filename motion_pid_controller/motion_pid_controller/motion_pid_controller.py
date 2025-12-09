@@ -5,7 +5,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile
 # from tf2_ros import LookupException, ConnectivityException, ExtrapolationException, Buffer
 from tf2_ros import TransformListener, Buffer
-from geometry_msgs.msg import Twist, Quaternion
+from geometry_msgs.msg import Twist, Quaternion, PoseStamped
 from std_msgs.msg import Float32
 # from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
@@ -174,6 +174,8 @@ class MotionPIDController(Node):
         self.LKd_ = self.declare_parameter("LKd", 0.0).value
         self.LKi_ = self.declare_parameter("LKi", 0.0).value
 
+        self.use_pose = self.declare_parameter("use_pose", False).value
+
         # Control loop frequency (Hz) and timer
         self.control_frequency = self.declare_parameter("control_frequency", 50.0).value
         self.control_period = 1.0 / self.control_frequency
@@ -182,11 +184,18 @@ class MotionPIDController(Node):
         # use this publisher to publish the controls determined by the PID controller to control the robot in gazebo
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', QoSProfile(depth=10))
 
-        self.odom_sub = self.create_subscription(
-            Odometry, 
-            '/zed/zed_node/odom',
-            self.odometry_callback, 
-            10)
+        if self.use_pose:
+            self.pose_sub = self.create_subscription(
+                PoseStamped,
+                '/zed/zed_node/pose',
+                self.pose_callback,
+                10)
+        else:
+            self.odom_sub = self.create_subscription(
+                Odometry, 
+                '/zed/zed_node/odom',
+                self.odometry_callback, 
+                10)
 
         # todo Part A: initialize your cross track error publisher here
         self.cte_publisher = self.create_publisher(Float32, '/cte', QoSProfile(depth=10))
@@ -227,16 +236,24 @@ class MotionPIDController(Node):
         yaw = self.quat_to_yaw(msg.pose.pose.orientation.x,msg.pose.pose.orientation.y,msg.pose.pose.orientation.z,msg.pose.pose.orientation.w)
         self.get_logger().info('Yaw (in degrees): %s' % str(degrees(yaw)), throttle_duration_sec=0.25)
 
-        # Part B
-        # 1) complete the PID class in the code above
-        # 2) call the PID controller update method with the calculated cross track error to compute the control command to be given to the robot
-        # 3) initialize a Twist message and populate it using the controls obtained
-        # 4) publish the Twist message using the self.cmd_pub publisher
-        # Example: cmd.angular.z = ??? (also remember to set your cmd.linear.x to get the robot to move forward)
+        self.latest_cte = final_cte
+        self.latest_angle_min = yaw
+        self.latest_xpos = msg.pose.pose.position.x
+
+    def pose_callback(self, msg: PoseStamped):
+        # Purely use y position as CTE for straight line following
+        final_cte = msg.pose.position.y
+
+        cte_msg = Float32()
+        cte_msg.data = final_cte
+        self.cte_publisher.publish(cte_msg)
+
+        yaw = self.quat_to_yaw(msg.pose.orientation.x,msg.pose.orientation.y,msg.pose.orientation.z,msg.pose.orientation.w)
+        self.get_logger().info('Yaw (in degrees): %s' % str(degrees(yaw)), throttle_duration_sec=0.25)
 
         self.latest_cte = final_cte
-        self.latest_angle_min = yaw # TODO: Verify that this is supposed to be the angle relative to the line/wall/lane
-        self.latest_xpos = msg.pose.pose.position.x
+        self.latest_angle_min = yaw
+        self.latest_xpos = msg.pose.position.x
 
     def control_loop(self):
         # Compute time delta
@@ -262,6 +279,7 @@ class MotionPIDController(Node):
         self.get_logger().info('Velocity command: %s ' % str(linear_velocity), throttle_duration_sec=0.25)
         self.get_logger().info('================================================\n', throttle_duration_sec=0.25)
 
+    ##### Old laserscan callback for reference
     # def laser_scan_callback(self, msg: LaserScan):
     #     # Part A
     #     # Calculate the cross track error by using the information given by the laser scanner
@@ -329,16 +347,6 @@ class MotionPIDController(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    
-    """
-        Arguments available:
-        parameters=[{"forward_speed": forward_speed_arg,
-                    "Kp" : Kp_val,
-                    "Kd" : Kd_val,
-                    "Ki" : Ki_val,
-                    "Kp_angle" : Kp_angle_val,
-                    }]
-    """
 
     wfh=MotionPIDController()
     rclpy.spin(wfh)
@@ -347,7 +355,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-
-
-
-    

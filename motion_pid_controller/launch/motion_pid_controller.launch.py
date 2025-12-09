@@ -23,6 +23,7 @@ def generate_launch_description():
             "LKp" : 1.0,
             "LKd" : 0.0,
             "LKi" : 0.0,
+            "use_pose" : False
         }]
     )
 
