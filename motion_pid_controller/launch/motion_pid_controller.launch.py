@@ -15,12 +15,12 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             "forward_speed": 1.0, # This is capped by the max speed of the robot which is 1
-            "Kp" : 0.2,
-            "Kd" : 0.08,
-            "Ki" : 0.00001,
-            "Kp_angle" : 1.5,
+            "Kp" : 0.2, #0.2
+            "Kd" : 0.09, #0.12975
+            "Ki" : 0.00001, #0.00001
+            "Kp_angle" : 2.0,
             "target_xpos" : 14.0,
-            "LKp" : 1.0,
+            "LKp" : 0.95, #0.95
             "LKd" : 0.0,
             "LKi" : 0.0,
             "use_pose" : False
