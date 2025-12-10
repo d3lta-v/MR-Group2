@@ -14,7 +14,7 @@ Confirm that these settings must be set correctly on `common.yaml` (for a full e
 
 ```yaml
 object_detection:
-    od_enabled:                         true                    # True to enable Object Detection [not available for ZED]
+    od_enabled:                         true                    # True to enable Object Detection
     model:                              'MULTI_CLASS_BOX_FAST'  # Only use the FAST model, anything else is too taxing for the Jetson
     max_range:                          5.                      # Maximum detection range. Lower the detection range as our area of ops is 2.5m
     allow_reduced_precision_inference:  true                    # Allow inference to run at a lower precision to improve runtime and memory usage
@@ -36,7 +36,7 @@ Place the folder inside your ROS workspace's src folder, and then build it with
 
 ```
 cd ~/ros2_ws
-colcon build --packages-select obj_det
+colcon build --packages-select obj_det --symlink-install
 ```
 
 ## Running

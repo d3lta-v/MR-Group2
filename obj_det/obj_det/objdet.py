@@ -1,6 +1,9 @@
 import rclpy
 from rclpy.node import Node
-from zed_msgs.msg import ObjectsStamped, Object
+try:
+    from zed_msgs.msg import ObjectsStamped, Object
+except ImportError:
+    from zed_interfaces.msg import ObjectsStamped, Object
 from rclpy.serialization import deserialize_message
 import math
 import os
