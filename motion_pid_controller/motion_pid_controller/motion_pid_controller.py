@@ -203,6 +203,11 @@ class MotionPIDController(Node):
         # todo Part B: initialize your PID controller here
         self.angular_pid_controller = AngularPID(self.AKp_, self.AKd_, self.AKi_, self.AKp_angle_)
         self.linear_pid_controller = LinearPID(self.LKp_, self.LKd_, self.LKi_, self.forward_speed)
+        self.get_logger().info('Motion PID Controller Node has been started with the following parameters:\n' +
+            f'  Forward Speed: {self.forward_speed}\n' +
+            f'  Target X Position: {self.target_xpos}\n' +
+            f'  Angular PID: Kp={self.AKp_}, Kd={self.AKd_}, Ki={self.AKi_}, Kp_angle={self.AKp_angle_}\n' +
+            f'  Linear PID: Kp={self.LKp_}, Kd={self.LKd_}, Ki={self.LKi_}\n')
 
         # State for control loop
         self.latest_cte = 0.0
