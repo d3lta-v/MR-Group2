@@ -4,7 +4,7 @@
   <name>obj_det</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="todo">nvidia</maintainer>
+  <maintainer email="example@example.com">nvidia</maintainer>
   <license>TODO: License declaration</license>
 
   <exec_depend>rclpy</exec_depend>

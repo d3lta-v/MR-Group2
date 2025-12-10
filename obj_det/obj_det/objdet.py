@@ -3,6 +3,7 @@ from rclpy.node import Node
 from zed_msgs.msg import ObjectsStamped, Object
 from rclpy.serialization import deserialize_message
 import math
+import os
 
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
@@ -40,10 +41,13 @@ class ObjectSubscriber(Node):
         ### Fixed rate unit to write the detected objects to CSV every 5 seconds
         self.csv_timer = self.create_timer(5.0, self.write_detected_objects_to_csv)  # every 5 seconds
 
+        self.get_logger().info('Object detection started.')
+
 
     def write_detected_objects_to_csv(self, filename='~/detected_objects.csv'):
         """ Write the detected objects to a CSV file. """
-        with open(filename, mode='w', newline='') as file:
+        expanded_path = os.path.expanduser(filename)
+        with open(expanded_path, mode='w+', newline='') as file:
             writer = csv.writer(file)
             # Write header
             writer.writerow(['Label ID', 'Position X', 'Position Y', 'Position Z', 'Class'])
@@ -86,10 +90,12 @@ class ObjectSubscriber(Node):
             # Once tracking is established, check if object is already recorded within detected_objects
             if obj.label_id not in [o.label_id for o in self.detected_objects]:
                 self.detected_objects.append(obj)  # Add new object to the list
+                self.get_logger().info(f"New object detected: Label ID {obj.label_id}, Class {obj.label}")
             else:
                 # Update existing object information
                 index = [o.label_id for o in self.detected_objects].index(obj.label_id)
                 self.detected_objects[index] = obj
+                self.get_logger().info(f"Updated object: Label ID {obj.label_id}, Class {obj.label}")
             
             # Visualisation
             corners = self.find_corners(obj)
