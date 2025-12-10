@@ -1,13 +1,14 @@
-import json
-import csv
 from pathlib import Path
 from datetime import datetime
 import cv2
 import numpy as np
 from numpy.polynomial import Polynomial
 from ultralytics import YOLO
-from ultralytics.engine import results
+from math import tan, degrees, radians
 # from cv_bridge import CvBridge
+
+# Keep in mind that negative angular velocity indicates a turn to the right, and positive indicates a turn to the left for ROS coordinate system.
+# In this system, positive angle means you should turn right to align with the lane, negative means turn left.
 
 # Configuration
 WEIGHTS_PATH = "best.pt"  # use the .engine file for Jetson devices, otherwise use .pt
@@ -17,6 +18,7 @@ CONF_THRESHOLD = 0.5      # higher confidence for better precision
 IOU_THRESHOLD = 0.7       # NMS IoU threshold, higher will result in more accurate segmentation at the cost of object detection
 IMGSZ = 320
 DEVICE = 'cpu'  # 0 for GPU, 'cpu' for CPU, 'mps' for Apple Silicon
+ACTUAL_LANE_WIDTH = 1.2  # meters, actual lane width for deviation calculation
 
 def compute_lane_deviation_and_angle(left_polygon, right_polygon, 
                                      robot_center_x=0.5, 
@@ -40,6 +42,10 @@ def compute_lane_deviation_and_angle(left_polygon, right_polygon,
     # Compute lane centers at each depth
     lane_centers = []
     deviations = []
+    deviation_meters_list = []
+
+    left_points = []
+    right_points = []
     
     for y in y_samples:
         left_idx = np.argmin(np.abs(left_polygon[:, 1] - y))
@@ -47,16 +53,30 @@ def compute_lane_deviation_and_angle(left_polygon, right_polygon,
         
         left_x = left_polygon[left_idx, 0]
         right_x = right_polygon[right_idx, 0]
-        
+
+        left_points.append([left_x, y])
+        right_points.append([right_x, y])
+
         center_x = (left_x + right_x) / 2
         lane_centers.append([center_x, y])
-        deviations.append(robot_center_x - center_x)
+
+        deviation_normalized = robot_center_x - center_x  # positive means lane center is to the right of robot center
+
+        lane_width_normalized = right_x - left_x  # at reference point
+        meters_per_unit = ACTUAL_LANE_WIDTH / lane_width_normalized
+        deviation_meters = deviation_normalized * meters_per_unit
+        
+        deviations.append(deviation_normalized)
+        deviation_meters_list.append(deviation_meters)
     
     lane_centers = np.array(lane_centers)
+    left_points = np.array(left_points)
+    right_points = np.array(right_points)
     
     # Weighted deviation (closer points more important)
     weights = y_samples
     weighted_deviation = np.average(deviations, weights=weights) # Weights are heavier linearly the lower in the image (closer to robot)
+    weighted_deviation_meters = np.average(deviation_meters_list, weights=weights)
     
     # Compute line of best fit of the lane centre for angle calculation. This is NOT the same as the deviation calculation above.
     p = Polynomial.fit(lane_centers[:, 1], lane_centers[:, 0], fit_degree) # first degree polynomial is a line
@@ -66,13 +86,32 @@ def compute_lane_deviation_and_angle(left_polygon, right_polygon,
     y_closest = y_max
     derivative = p.deriv()
     slope_dx_dy = derivative(y_closest)
-    
-    # Convert slope to angle
-    angle_rad = np.arctan(slope_dx_dy)
-    angle_deg = np.degrees(angle_rad)
-    
-    return weighted_deviation, angle_deg, lane_centers, p
 
+    # Convert slope to angle
+    angle_deg = np.degrees(np.arctan(slope_dx_dy))
+
+    # LANE ORIENTATION (not lane curvature!)
+    # Use only nearest points to avoid perspective distortion
+    near_threshold = 0.7
+    y_cutoff = y_min + (y_max - y_min) * near_threshold
+
+    # Custom lane fit algorithm for angle calculation
+    p_left = Polynomial.fit(left_points[:, 1], left_points[:, 0], fit_degree)
+    p_right = Polynomial.fit(right_points[:, 1], right_points[:, 0], fit_degree)
+    diff_poly = p_right - p_left
+    
+    # Find vanishing point where left and right lanes intersect
+    intersection_x_coords = diff_poly.roots()
+    real_intersection_x = intersection_x_coords[np.isreal(intersection_x_coords)].real
+
+    # Compute vehicle-to-lane heading angle via the vanishing point
+    vx = p_left(real_intersection_x)[0]
+    cx = 0.5
+    fx = 1 / (2*tan(radians(110/2)))  # ZED 2 uses a 110 degree horizontal FOV camera
+
+    heading_angle = degrees(np.arctan((vx - cx) / fx))
+
+    return weighted_deviation, weighted_deviation_meters, angle_deg, lane_centers, p, heading_angle, p_left, p_right
 
 
 # Initialize model
@@ -108,31 +147,22 @@ for result in results_w:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Print results
+    lane_indices = []
     print(f"Detected {len(result.boxes)} objects.")
     for i, box in enumerate(result.boxes):
         cls_id = int(box.cls[0])
         cls_name = class_names[cls_id] if cls_id in class_names else "Unknown"
         conf = box.conf[0]
+        if (cls_name == 'lane'):
+            lane_indices.append(i)
         print(f"Object {i}: Class ID: {cls_id}, Class Name: {cls_name}, Confidence: {conf:.2f}")
-
-    # Save annotated image
-    # annotated_img = res.plot()
-    # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    # output_image_path = output_path / f"annotated_{timestamp}.png"
-    # cv2.imwrite(str(output_image_path), annotated_img)
-    # print(f"Annotated image saved to {output_image_path}")
-
-    # Save masks as separate images
-    # for i, mask in enumerate(res.masks.data):
-    #     mask_np = (mask.cpu().numpy() * 255).astype(np.uint8)
-    #     output_mask_path = output_path / f"mask_{i}_{timestamp}.png"
-    #     cv2.imwrite(str(output_mask_path), mask_np)
-    #     print(f"Mask {i} saved to {output_mask_path}")
 
     # Masks should be processed as xyn format for path segmentation training
     # Here we save the masks in JSON format as a list of polygons
     masks_polygons = []
-    for mask in result.masks:
+    for i, mask in enumerate(result.masks):
+        if i not in lane_indices:
+            continue
         polygons = mask.xyn  # Convert to list for JSON serialization
         masks_polygons.append(polygons)
 
@@ -148,25 +178,31 @@ for result in results_w:
     # np.zeros creates an array filled with zeros, which corresponds to black in BGR
     img = np.zeros((height, width, 3), np.uint8)
 
-    left_lane_pixels = (masks_polygons[0] * np.array([width, height])).astype(np.int32)
-    right_lane_pixels = (masks_polygons[1] * np.array([width, height])).astype(np.int32)
+    left_lane_0 = np.mean(masks_polygons[0][0][:, 0]) < np.mean(masks_polygons[1][0][:, 0])
+    left_lane_mask = masks_polygons[0] if left_lane_0 else masks_polygons[1]
+    right_lane_mask = masks_polygons[1] if left_lane_0 else masks_polygons[0]
+
+    left_lane_pixels = (left_lane_mask * np.array([width, height])).astype(np.int32)
+    right_lane_pixels = (right_lane_mask * np.array([width, height])).astype(np.int32)
 
     cv2.fillPoly(img, [left_lane_pixels], color=(0, 255, 0))   # Green
     cv2.fillPoly(img, [right_lane_pixels], color=(0, 0, 255))  # Red
 
-    deviation, angle_deg, lane_centers, p = compute_lane_deviation_and_angle(masks_polygons[0][0], masks_polygons[1][0], num_samples=100)
-    print(f"Lateral Deviation: {deviation:.4f}, Lane Heading Angle: {angle_deg:.2f} degrees")
+    deviation, deviation_m, angle_deg, lane_centers, p, heading_angle, p_left, p_right = compute_lane_deviation_and_angle(left_lane_mask[0], right_lane_mask[0], num_samples=10)
+    print(f"Lateral Deviation (meters): {deviation_m:.4f}, Vehicle-to-Lane Heading Angle: {heading_angle:.2f} degrees")
 
     cv2.polylines(img, [(lane_centers * np.array([width, height])).astype(np.int32)], isClosed=False, color=(255, 255, 0), thickness=2)
 
     # Draw the polynomial line of best fit
     x_values = np.arange(0.0, 1.0, 0.01) # normalized x values
-    y_values = p(x_values)
-    # y_values = np.polynomial.polyval(x_values / height, p) * height
-    points = (np.array([y_values, x_values], dtype=np.float32).T * np.array([width, height])).astype(np.int32)
-    cv2.polylines(img, [points], isClosed=False, color=(255, 0, 255), thickness=2)
+    y_values_left = p_left(x_values)
+    y_values_right = p_right(x_values)
+    points_left = (np.array([y_values_left, x_values], dtype=np.float32).T * np.array([width, height])).astype(np.int32)
+    cv2.polylines(img, [points_left], isClosed=False, color=(255, 0, 255), thickness=2)
+    points_right = (np.array([y_values_right, x_values], dtype=np.float32).T * np.array([width, height])).astype(np.int32)
+    cv2.polylines(img, [points_right], isClosed=False, color=(255, 0, 255), thickness=2)
 
     cv2.imshow("Polygons Visualization", img)
+    cv2.imshow("Original Image", result.orig_img)
     cv2.imwrite(str(output_path / f"polygons_viz_{timestamp}.png"), img)
-    cv2.waitKey(3000)  # Display for 1 second
-
+    cv2.waitKey(3000)  # Display for 3 seconds
