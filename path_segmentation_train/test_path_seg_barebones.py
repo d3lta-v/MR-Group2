@@ -92,8 +92,8 @@ def compute_lane_deviation_and_angle(left_polygon, right_polygon,
 
     # LANE ORIENTATION (not lane curvature!)
     # Use only nearest points to avoid perspective distortion
-    near_threshold = 0.7
-    y_cutoff = y_min + (y_max - y_min) * near_threshold
+    # near_threshold = 0.7
+    # y_cutoff = y_min + (y_max - y_min) * near_threshold
 
     # Custom lane fit algorithm for angle calculation
     p_left = Polynomial.fit(left_points[:, 1], left_points[:, 0], fit_degree)
@@ -137,7 +137,7 @@ results_w = model.predict(
     device=DEVICE,
     verbose=True,
     stream=True,
-    retina_masks=True  # High-resolution masks
+    retina_masks=False  # High-resolution masks
 )
 
 # print(f"Inference completed. {len(result)} result(s) obtained.")
