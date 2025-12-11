@@ -23,7 +23,8 @@ def generate_launch_description():
             "LKp" : 0.95, #0.95
             "LKd" : 0.0,
             "LKi" : 0.0,
-            "use_pose" : False
+            "use_pose" : False,
+            "use_ext_data" : False   # Enable use of external CTE and angular error data, via /cte and /angle_error topics
         }]
     )
 

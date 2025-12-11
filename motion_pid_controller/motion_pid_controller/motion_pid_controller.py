@@ -38,10 +38,6 @@ class AngularPID:
         self.error_difference = 0.0
     
     def update_control(self, current_error, angle_min, dt, logger):
-        # HACK TODO: update_control's frequency is completely defined by the LaserScan callback frequency
-        # which is not ideal. A better implementation would be to have a separate control loop running
-        # at a fixed frequency independent of the LaserScan callback frequency.
-
         # todo Part B: use the current cross track error to update the control commands
         # to the husky such that it can better follow the wall
         # Hint:
@@ -175,6 +171,7 @@ class MotionPIDController(Node):
         self.LKi_ = self.declare_parameter("LKi", 0.0).value
 
         self.use_pose = self.declare_parameter("use_pose", False).value
+        self.use_ext_data = self.declare_parameter("use_ext_data", False).value
 
         # Control loop frequency (Hz) and timer
         self.control_frequency = self.declare_parameter("control_frequency", 50.0).value
@@ -184,6 +181,22 @@ class MotionPIDController(Node):
         # use this publisher to publish the controls determined by the PID controller to control the robot in gazebo
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', QoSProfile(depth=10))
 
+        if self.use_ext_data:
+            self.get_logger().info('Using external CTE and angle error data from /cte and /angle_error topics.')
+            self.cte_subscriber = self.create_subscription(
+                Float32,
+                '/cte',
+                self.cte_callback,
+                10)
+        
+            self.angle_subscriber = self.create_subscription(
+                Float32,
+                '/angle_error',
+                self.angle_callback,
+                10)
+        else:
+            self.get_logger().info('Only using ZED2 odometry data for CTE and angle error calculation.')
+        
         if self.use_pose:
             self.pose_sub = self.create_subscription(
                 PoseStamped,
@@ -196,9 +209,6 @@ class MotionPIDController(Node):
                 '/zed/zed_node/odom',
                 self.odometry_callback, 
                 10)
-
-        # todo Part A: initialize your cross track error publisher here
-        self.cte_publisher = self.create_publisher(Float32, '/cte', QoSProfile(depth=10))
 
         # todo Part B: initialize your PID controller here
         self.angular_pid_controller = AngularPID(self.AKp_, self.AKd_, self.AKi_, self.AKp_angle_)
@@ -222,6 +232,11 @@ class MotionPIDController(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
+    def cte_callback(self, msg: Float32):
+        self.latest_cte = msg.data
+
+    def angle_callback(self, msg: Float32):
+        self.latest_angle_min = msg.data
     
     def quat_to_yaw(self, qx, qy, qz, qw):
         """Convert quaternion to yaw (heading) in radians."""
@@ -232,32 +247,19 @@ class MotionPIDController(Node):
 
     def odometry_callback(self, msg: Odometry):
         # Purely use y position as CTE for straight line following
-        final_cte = msg.pose.pose.position.y 
-
-        cte_msg = Float32()
-        cte_msg.data = final_cte
-        self.cte_publisher.publish(cte_msg)
-
-        yaw = self.quat_to_yaw(msg.pose.pose.orientation.x,msg.pose.pose.orientation.y,msg.pose.pose.orientation.z,msg.pose.pose.orientation.w)
-        self.get_logger().info('Yaw (in degrees): %s' % str(degrees(yaw)), throttle_duration_sec=0.25)
-
-        self.latest_cte = final_cte
-        self.latest_angle_min = yaw
+        if not self.use_ext_data:
+            self.latest_cte = msg.pose.pose.position.y
+            yaw = self.quat_to_yaw(msg.pose.pose.orientation.x,msg.pose.pose.orientation.y,msg.pose.pose.orientation.z,msg.pose.pose.orientation.w)
+            self.latest_angle_min = yaw        
         self.latest_xpos = msg.pose.pose.position.x
 
     def pose_callback(self, msg: PoseStamped):
         # Purely use y position as CTE for straight line following
-        final_cte = msg.pose.position.y
-
-        cte_msg = Float32()
-        cte_msg.data = final_cte
-        self.cte_publisher.publish(cte_msg)
-
-        yaw = self.quat_to_yaw(msg.pose.orientation.x,msg.pose.orientation.y,msg.pose.orientation.z,msg.pose.orientation.w)
-        self.get_logger().info('Yaw (in degrees): %s' % str(degrees(yaw)), throttle_duration_sec=0.25)
-
-        self.latest_cte = final_cte
-        self.latest_angle_min = yaw
+        if not self.use_ext_data:
+            self.latest_cte = msg.pose.position.y
+            yaw = self.quat_to_yaw(msg.pose.orientation.x,msg.pose.orientation.y,msg.pose.orientation.z,msg.pose.orientation.w)
+            self.latest_angle_min = yaw
+        
         self.latest_xpos = msg.pose.position.x
 
     def control_loop(self):
@@ -277,10 +279,11 @@ class MotionPIDController(Node):
         self.cmd_pub.publish(actuator_cmd)
 
         self.get_logger().info('================================================', throttle_duration_sec=0.25)
-        self.get_logger().info('CTE: %s' % str(self.latest_cte), throttle_duration_sec=0.25)
-        self.get_logger().info('Steering command (Angular velocity in radians): %s' % str(steering_angle), throttle_duration_sec=0.25)
-        self.get_logger().info('Angle to lane: %s' % str(degrees(self.latest_angle_min)), throttle_duration_sec=0.25)
         self.get_logger().info('Linear error: %s' % str(self.target_xpos - self.latest_xpos), throttle_duration_sec=0.25)
+        self.get_logger().info('CTE: %s' % str(self.latest_cte), throttle_duration_sec=0.25)
+        self.get_logger().info('Angle to lane: %s' % str(degrees(self.latest_angle_min)), throttle_duration_sec=0.25)
+        self.get_logger().info('------------------------------------------------', throttle_duration_sec=0.25)
+        self.get_logger().info('Steering command (Angular velocity in radians): %s' % str(steering_angle), throttle_duration_sec=0.25)
         self.get_logger().info('Velocity command: %s ' % str(linear_velocity), throttle_duration_sec=0.25)
         self.get_logger().info('================================================\n', throttle_duration_sec=0.25)
 
