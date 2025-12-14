@@ -1,12 +1,20 @@
+# Imagery inference node
+
 ## Installing
 
-```
-colcon build --packages-select yolo_inference
-ros2 run yolo_inference inference
+This package requires you to install Ultralytics, a package for training and deploying YOLO models. As we are using an Nvidia Jetson system that is running JetPack 5, please follow the [instructions provided by Ultralytics](https://docs.ultralytics.com/guides/nvidia-jetson/#run-on-jetpack-512) strictly to install the correct package versions so that the inference code works correctly.
+
+This package uses an optimised copy of our current weights called `best.engine`, which has been compiled from Pytorch format to TensorRT to fully take advantage of the Jetson's GPU. If you have issues with the TensorRT version, feel free to edit the code to revert it back to `best.pt` for the unoptimised Pytorch version.
+
+Place the folder inside your ROS workspace's src folder, and then build it with:
+
+```bash
+cd ~/ros2_ws
+colcon build --packages-select yolo_inference --symlink-install
 ```
 
 ## Running
 
-```
+```bash
 ros2 run yolo_inference inference
 ```

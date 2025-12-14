@@ -19,7 +19,10 @@ class YoloInferenceNode(Node):
 
         # Load inference engine
         package_share_directory = get_package_share_directory('yolo_inference')
-        resource_path = os.path.join(package_share_directory, 'best.pt')
+        # Uncomment the following if using PyTorch weights
+        # resource_path = os.path.join(package_share_directory, 'best.pt')
+        # Using TensorRT engine for Jetson due to much better performance
+        resource_path = os.path.join(package_share_directory, 'best.engine')
 
         # --- CONFIGURATION ---
         self.weights_path = resource_path # Make sure this path is absolute or correct relative to execution
