@@ -83,7 +83,7 @@ Start the system components in separate terminals (source your ROS workspace fir
 1. Start the camera/recording script:
 
 ```bash
-./1_startcam.sh
+ros2 launch zed_wrapper zed_camera.launch.py camera_model:=zed2
 ```
 
 2. Start the remote control interface (manual teleop):
@@ -95,7 +95,7 @@ remote_control
 3. Start the car control script (vehicle actuator bridge):
 
 ```bash
-./2_car_control.sh
+ros2 launch car_control car_control.launch.py
 ```
 
 4. Start the YOLO inference node:
