@@ -3,15 +3,16 @@ import rclpy
 import os
 from rclpy.node import Node
 from sensor_msgs.msg import Image
-from std_msgs.msg import String
 from cv_bridge import CvBridge
-import cv2
+# import cv2
 import numpy as np
 from ultralytics import YOLO
 from std_msgs.msg import Float32
 from numpy.polynomial import Polynomial
 from math import tan, degrees, radians
 from ament_index_python.packages import get_package_share_directory
+from math import isnan, isinf
+from collections import deque
 
 class YoloInferenceNode(Node):
     def __init__(self):
@@ -50,6 +51,10 @@ class YoloInferenceNode(Node):
         self.bridge = CvBridge()
         self.model = YOLO(self.weights_path, task='segment')
         self.class_names = self.model.names
+
+        # Data buffers
+        self.cte_queue = deque(maxlen=10) # 10 for 0.2 seconds worth of data filtering, since the camera is modified to run at 50hz
+        self.yaw_queue = deque(maxlen=10)
         
         self.get_logger().info(f"YOLOv11 Node Started. Loaded: {self.weights_path}")
 
@@ -172,6 +177,10 @@ class YoloInferenceNode(Node):
                 if (cls_name == 'lane'):
                     lane_indices.append(i)
 
+            if len(result.boxes) < 2:
+                print("Less than two objects detected, skipping publish")
+                return
+
             # Masks should be processed as xyn (xy normalized) format for path segmentation training
             # Here we save the masks in JSON format as a list of polygons
             masks_polygons = []
@@ -191,18 +200,17 @@ class YoloInferenceNode(Node):
 
             # Create a black image (3 channels for BGR, 8-bit unsigned integers for pixel values)
             # np.zeros creates an array filled with zeros, which corresponds to black in BGR
-            img = np.zeros((height, width, 3), np.uint8)
+            # img = np.zeros((height, width, 3), np.uint8)
 
             # Detect which is the left lane, by simply checking the x-coordinate
             left_lane_0 = np.mean(masks_polygons[0][0][:, 0]) < np.mean(masks_polygons[1][0][:, 0])
             left_lane_mask = masks_polygons[0] if left_lane_0 else masks_polygons[1]
             right_lane_mask = masks_polygons[1] if left_lane_0 else masks_polygons[0]
 
-            left_lane_pixels = (left_lane_mask * np.array([width, height])).astype(np.int32)
-            right_lane_pixels = (right_lane_mask * np.array([width, height])).astype(np.int32)
-
-            cv2.fillPoly(img, [left_lane_pixels], color=(0, 255, 0))   # Green
-            cv2.fillPoly(img, [right_lane_pixels], color=(0, 0, 255))  # Red
+            # left_lane_pixels = (left_lane_mask * np.array([width, height])).astype(np.int32)
+            # right_lane_pixels = (right_lane_mask * np.array([width, height])).astype(np.int32)
+            # cv2.fillPoly(img, [left_lane_pixels], color=(0, 255, 0))   # Green
+            # cv2.fillPoly(img, [right_lane_pixels], color=(0, 0, 255))  # Red
 
             deviation_meters, heading_angle, lane_centers, p, p_left, p_right = self.compute_lane_deviation_and_angle(
                 left_lane_mask[0], 
@@ -211,32 +219,40 @@ class YoloInferenceNode(Node):
             
             self.get_logger().info(f"Lateral Deviation (meters): {deviation_meters:.4f}, Vehicle-to-Lane Heading Angle: {heading_angle:.2f} degrees")
 
-            cv2.polylines(img, [(lane_centers * np.array([width, height])).astype(np.int32)], isClosed=False, color=(255, 255, 0), thickness=2)
+            # Perform median filtering
+            if not (isnan(deviation_meters) or isinf(deviation_meters) or isnan(heading_angle) or isinf(heading_angle)):
+                self.cte_queue.append(deviation_meters)
+                self.yaw_queue.append(heading_angle)
+
+            filtered_cte = np.median(self.cte_queue)
+            filtered_yaw = np.median(self.yaw_queue)
+
+            # cv2.polylines(img, [(lane_centers * np.array([width, height])).astype(np.int32)], isClosed=False, color=(255, 255, 0), thickness=2)
 
             # Draw the polynomial line of best fit
-            x_values = np.arange(0.0, 1.0, 0.01) # normalized x values
-            y_values_left = p_left(x_values)
-            y_values_right = p_right(x_values)
-            points_left = (np.array([y_values_left, x_values], dtype=np.float32).T * np.array([width, height])).astype(np.int32)
-            cv2.polylines(img, [points_left], isClosed=False, color=(255, 0, 255), thickness=2)
-            points_right = (np.array([y_values_right, x_values], dtype=np.float32).T * np.array([width, height])).astype(np.int32)
-            cv2.polylines(img, [points_right], isClosed=False, color=(255, 0, 255), thickness=2)
+            # x_values = np.arange(0.0, 1.0, 0.01) # normalized x values
+            # y_values_left = p_left(x_values)
+            # y_values_right = p_right(x_values)
+            # points_left = (np.array([y_values_left, x_values], dtype=np.float32).T * np.array([width, height])).astype(np.int32)
+            # cv2.polylines(img, [points_left], isClosed=False, color=(255, 0, 255), thickness=2)
+            # points_right = (np.array([y_values_right, x_values], dtype=np.float32).T * np.array([width, height])).astype(np.int32)
+            # cv2.polylines(img, [points_right], isClosed=False, color=(255, 0, 255), thickness=2)
 
             # 4. Publish Detection Data
             cte_msg = Float32()
-            cte_msg.data = float(deviation_meters)
+            cte_msg.data = float(filtered_cte)
             self.cte_pub.publish(cte_msg)
             angle_e_msg = Float32()
-            angle_e_msg.data = float(heading_angle)
+            angle_e_msg.data = float(filtered_yaw)
             self.angle_e_pub.publish(angle_e_msg)
 
             # 5. Publish Debug Images (with bounding boxes drawn, and track lines)
-            annotated_frame = result.plot()
-            annotated_ros_image = self.bridge.cv2_to_imgmsg(annotated_frame, "bgr8")
-            self.debug_pub.publish(annotated_ros_image)
+            # annotated_frame = result.plot()
+            # annotated_ros_image = self.bridge.cv2_to_imgmsg(annotated_frame, "bgr8")
+            # self.debug_pub.publish(annotated_ros_image)
             # Your PID node can subscribe to '/yolo/track_image' to view these images
-            track_pub_msg = self.bridge.cv2_to_imgmsg(img, "bgr8")
-            self.track_pub.publish(track_pub_msg)
+            # track_pub_msg = self.bridge.cv2_to_imgmsg(img, "bgr8")
+            # self.track_pub.publish(track_pub_msg)
 
         except Exception as e:
             self.get_logger().error(f"Inference Error: {e}")

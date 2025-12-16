@@ -1,5 +1,13 @@
 # Imagery inference node
 
+## Theory of operation
+
+1. The imagery is streamed from the left camera of the ZED2 camera via the topic `/zed/zed_node/rgb/image_rect_color`
+2. The YOLOv11 model segments it into 2 lanes with polygon points as outputs
+3. The centre deviation and yaw from track are calculated and filtered with a median filter to remove outlier 
+4. The filtered values are then published to `/cte` and `/angle_error`.
+
+
 ## Installing
 
 This package requires you to install Ultralytics, a package for training and deploying YOLO models. As we are using an Nvidia Jetson system that is running JetPack 5, please follow the [instructions provided by Ultralytics](https://docs.ultralytics.com/guides/nvidia-jetson/#run-on-jetpack-512) strictly to install the correct package versions so that the inference code works correctly.

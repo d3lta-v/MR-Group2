@@ -4,8 +4,11 @@ import cv2
 import numpy as np
 from numpy.polynomial import Polynomial
 from ultralytics import YOLO
-from math import tan, degrees, radians
+from math import tan, degrees, radians, isnan, isinf
+import csv
+import os
 # from cv_bridge import CvBridge
+from collections import deque
 
 # Keep in mind that negative angular velocity indicates a turn to the right, and positive indicates a turn to the left for ROS coordinate system.
 # In this system, positive angle means you should turn right to align with the lane, negative means turn left.
@@ -19,6 +22,12 @@ IOU_THRESHOLD = 0.7       # NMS IoU threshold, higher will result in more accura
 IMGSZ = 320
 DEVICE = 'cpu'  # 0 for GPU, 'cpu' for CPU, 'mps' for Apple Silicon
 ACTUAL_LANE_WIDTH = 1.2  # meters, actual lane width for deviation calculation
+
+OUTPUT_FILE = "lane_detection_results.csv"
+
+final_cte_yaw_results = []
+cte_queue = deque(maxlen=15)
+yaw_queue = deque(maxlen=15)
 
 def compute_lane_deviation_and_angle(left_polygon, right_polygon, 
                                      robot_center_x=0.5, 
@@ -113,6 +122,17 @@ def compute_lane_deviation_and_angle(left_polygon, right_polygon,
 
     return weighted_deviation, weighted_deviation_meters, angle_deg, lane_centers, p, heading_angle, p_left, p_right
 
+def write_results_to_csv(filename='~/Downloads/path_seg_results.csv'):
+    """ Write the segmentation results to a CSV file. """
+    expanded_path = os.path.expanduser(filename)
+    with open(expanded_path, mode='w+', newline='') as file:
+        writer = csv.writer(file)
+        # Write header
+        # writer.writerow(['Label ID', 'Position X', 'Position Y', 'Position Z', 'Class'])
+        writer.writerow(['Image Name', 'ID', 'CTE', 'Yaw'])
+        # Write object data
+        for obj in final_cte_yaw_results:
+            writer.writerow(obj) # Note that label is actually the object's class
 
 # Initialize model
 model = YOLO(WEIGHTS_PATH, task='segment')
@@ -140,9 +160,10 @@ results_w = model.predict(
     retina_masks=False  # High-resolution masks
 )
 
-# print(f"Inference completed. {len(result)} result(s) obtained.")
+counter = 0
 
 for result in results_w:
+    counter += 1
     # res: results.Results = result[0]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -157,6 +178,10 @@ for result in results_w:
             lane_indices.append(i)
         print(f"Object {i}: Class ID: {cls_id}, Class Name: {cls_name}, Confidence: {conf:.2f}")
 
+    if len(result.boxes) < 2:
+        print("Less than two lane masks detected, skipping polygon visualization")
+        continue
+
     # Masks should be processed as xyn format for path segmentation training
     # Here we save the masks in JSON format as a list of polygons
     masks_polygons = []
@@ -165,10 +190,6 @@ for result in results_w:
             continue
         polygons = mask.xyn  # Convert to list for JSON serialization
         masks_polygons.append(polygons)
-
-    if len(masks_polygons) < 2:
-        print("Less than two lane masks detected, skipping polygon visualization")
-        continue
 
     # Draw a new image directly with normalised polygons for better visualization. original image is 320x180
     height = 180*4
@@ -191,6 +212,14 @@ for result in results_w:
     deviation, deviation_m, angle_deg, lane_centers, p, heading_angle, p_left, p_right = compute_lane_deviation_and_angle(left_lane_mask[0], right_lane_mask[0], num_samples=10)
     print(f"Lateral Deviation (meters): {deviation_m:.4f}, Vehicle-to-Lane Heading Angle: {heading_angle:.2f} degrees")
 
+    if not (isnan(deviation_m) or isinf(deviation_m) or isnan(heading_angle) or isinf(heading_angle)):
+        cte_queue.append(deviation_m)       # deque will automatically pop when it gets too large
+        yaw_queue.append(heading_angle)
+    
+    filtered_cte = np.median(cte_queue)
+    filtered_yaw = np.median(yaw_queue)
+    final_cte_yaw_results.append([os.path.basename(result.path), counter, filtered_cte, filtered_yaw])
+
     cv2.polylines(img, [(lane_centers * np.array([width, height])).astype(np.int32)], isClosed=False, color=(255, 255, 0), thickness=2)
 
     # Draw the polynomial line of best fit
@@ -201,8 +230,11 @@ for result in results_w:
     cv2.polylines(img, [points_left], isClosed=False, color=(255, 0, 255), thickness=2)
     points_right = (np.array([y_values_right, x_values], dtype=np.float32).T * np.array([width, height])).astype(np.int32)
     cv2.polylines(img, [points_right], isClosed=False, color=(255, 0, 255), thickness=2)
-
+    
     cv2.imshow("Polygons Visualization", img)
     cv2.imshow("Original Image", result.orig_img)
-    cv2.imwrite(str(output_path / f"polygons_viz_{timestamp}.png"), img)
-    cv2.waitKey(3000)  # Display for 3 seconds
+    # cv2.imwrite(str(output_path / f"polygons_viz_{timestamp}.png"), img)
+    if cv2.waitKey(3000) == ord('q'):  # Display for 3 seconds
+        break
+
+write_results_to_csv(OUTPUT_FILE)
